@@ -1,0 +1,48 @@
+name: Build ReelBlock APK
+
+on:
+  push:
+    paths:
+      - 'reel-blocker/**'
+      - '.github/workflows/reel-blocker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: reel-blocker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk ReelBlock.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ReelBlock
+          path: reel-blocker/ReelBlock.apk
+
+      - name: Publish APK as a release (easy phone download)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: reelblock-latest
+          name: ReelBlock (latest build)
+          target_commitish: ${{ github.sha }}
+          files: reel-blocker/ReelBlock.apk
