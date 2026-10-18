@@ -25,6 +25,15 @@ An Android app that stops doomscrolling on **YouTube Shorts** and **Instagram Re
 After that it runs by itself, even after a restart.
 **10 minutes after step 1 it locks by itself.** Then the Settings pages that could turn it off or uninstall it are blocked. Do steps 2 and 3 within those 10 minutes.
 
+## If the APK does not install
+
+Made for realme UI 7 / Android 16 (works on Android 8 and newer).
+
+- **"App blocked to protect your device" / "Blocked by Play Protect"**: Google blocks apps from outside the Play Store that use Accessibility (this is on in India). Open Play Store > your photo > **Play Protect** > ⚙️ > turn off **Scan apps with Play Protect**. Install ReelBlock. Turn it back on afterwards.
+- **realme "This app may be risky" / install stopped**: Settings > Security & privacy > turn off **Installation safety check** / **Enhanced protection** while installing. Or tap **Install anyway** / **More details > Install**.
+- **"App not installed" / "package conflicts"**: an older ReelBlock with a different key is installed. Uninstall it first (Settings > Apps > ReelBlock > Uninstall; if Device admin is on, turn it off first). From version 3.0 on, every build uses the same key, so updates install over the old app.
+- **Nothing happens when you tap the file**: open it from the **Files** app instead of the browser, and allow "Install unknown apps" for Files.
+
 ## Unlocking
 
 Open ReelBlock > **Request unlock**. After 24 hours you can turn it off in Settings.
@@ -35,4 +44,3 @@ While you wait, and while a 15-minute block is running, the Date & time settings
 - Android does not let any app turn on Accessibility or Device admin by itself. You must do steps 1 to 3 once.
 - View names inside Instagram/YouTube can change after an app update. If counting stops working, the app needs an update.
 - Safe mode, a factory reset, or a PC with ADB can still remove it. No app can stop the owner of a phone completely.
-- Each new build is signed with a different key. To install a newer build, unlock, uninstall the old one, then install the new one.

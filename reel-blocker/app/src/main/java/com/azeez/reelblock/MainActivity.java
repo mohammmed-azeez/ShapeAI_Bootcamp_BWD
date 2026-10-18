@@ -76,6 +76,7 @@ public class MainActivity extends Activity {
         });
 
         ScrollView scroll = new ScrollView(this);
+        scroll.setFitsSystemWindows(true);
         scroll.addView(layout);
         setContentView(scroll);
     }

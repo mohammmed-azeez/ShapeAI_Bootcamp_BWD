@@ -26,13 +26,13 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.11.1'
 
       - name: Build APK
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleRelease --no-daemon
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk ReelBlock.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ReelBlock.apk
 
       - uses: actions/upload-artifact@v4
         with:

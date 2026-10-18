@@ -4,14 +4,32 @@ plugins {
 
 android {
     namespace 'com.azeez.reelblock'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.azeez.reelblock'
         minSdk 26
-        targetSdk 34
-        versionCode 2
-        versionName '2.0'
+        targetSdk 36
+        versionCode 3
+        versionName '3.0'
+    }
+
+    // One fixed key, so every new build installs over the old one.
+    // This is a personal app, not published anywhere, so the password is kept here.
+    signingConfigs {
+        release {
+            storeFile file('reelblock.jks')
+            storePassword 'reelblock'
+            keyAlias 'reelblock'
+            keyPassword 'reelblock'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
     }
 
     compileOptions {
