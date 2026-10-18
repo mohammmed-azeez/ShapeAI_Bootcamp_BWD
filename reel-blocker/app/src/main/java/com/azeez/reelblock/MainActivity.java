@@ -57,9 +57,9 @@ public class MainActivity extends Activity {
             startActivity(intent);
         });
 
-        lockButton = addButton(layout, "4. LOCK (needs 24h wait to undo)", v ->
+        lockButton = addButton(layout, "Lock now (skip the 10 min setup time)", v ->
                 new AlertDialog.Builder(this)
-                        .setTitle("Lock ReelBlock?")
+                        .setTitle("Lock ReelBlock now?")
                         .setMessage("Settings pages that could turn off or uninstall ReelBlock "
                                 + "will be blocked. To undo, you must request an unlock here "
                                 + "and wait 24 hours.\n\nFinish steps 1 to 3 first.")
@@ -88,13 +88,26 @@ public class MainActivity extends Activity {
 
     private void refresh() {
         StringBuilder sb = new StringBuilder();
-        sb.append(isServiceEnabled() ? "✅ Blocking is ON\n" : "❌ Blocking is OFF. Do step 1.\n");
+        sb.append("Rule: up to ").append(Limiter.MAX_PER_WINDOW)
+                .append(" Shorts/Reels per minute. One more blocks them for 15 minutes.\n\n");
+        sb.append(isServiceEnabled() ? "✅ Watching Shorts and Reels\n" : "❌ Not running. Do step 1.\n");
         sb.append(isAdminActive() ? "✅ Uninstall is blocked\n" : "❌ Uninstall is not blocked. Do step 3.\n");
+
+        long blocked = new Limiter(this).blockedRemainingMs();
+        if (blocked > 0) {
+            sb.append("⛔ Shorts and Reels blocked for ").append((blocked + 59_999) / 60_000)
+                    .append(" more min\n");
+        }
 
         boolean locked = Lock.isLocked(this);
         boolean protecting = Lock.isProtecting(this);
+        long setup = Lock.setupRemainingMs(this);
         if (!locked) {
-            sb.append("🔓 Not locked. Do step 4.");
+            sb.append(isServiceEnabled() ? "🔓 Unlocked. You can turn it off in Settings."
+                    : "🔓 Locks by itself 10 min after step 1.");
+        } else if (setup > 0) {
+            sb.append("⏳ Locks by itself in ").append((setup + 59_999) / 60_000)
+                    .append(" min. Finish steps 2 and 3 before that.");
         } else if (Lock.requestedAt(this) == 0) {
             sb.append("🔒 Locked.");
         } else if (protecting) {
@@ -102,12 +115,12 @@ public class MainActivity extends Activity {
             sb.append("⏳ Unlock requested. Wait ").append(mins / 60).append("h ")
                     .append(mins % 60).append("m more.");
         } else {
-            sb.append("🔓 Unlocked. You can now turn it off in Settings. Press LOCK to protect again.");
+            sb.append("🔓 Unlocked. You can turn it off in Settings now. Press Lock to protect again.");
         }
         status.setText(sb);
 
         lockButton.setEnabled(!protecting);
-        unlockButton.setEnabled(locked && Lock.requestedAt(this) == 0);
+        unlockButton.setEnabled(protecting && Lock.requestedAt(this) == 0);
     }
 
     private boolean isServiceEnabled() {

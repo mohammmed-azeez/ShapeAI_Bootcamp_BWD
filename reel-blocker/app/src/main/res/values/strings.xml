@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ReelBlock</string>
-    <string name="service_description">ReelBlock watches the screen and leaves Instagram Reels, YouTube Shorts and other short-video feeds the moment they open. It does not collect or send any data.</string>
+    <string name="service_description">ReelBlock counts the YouTube Shorts and Instagram Reels you watch. Up to 3 per minute is fine. One more blocks them for 15 minutes. It does not collect or send any data.</string>
     <string name="admin_description">Stops ReelBlock from being uninstalled while protection is locked.</string>
 </resources>
