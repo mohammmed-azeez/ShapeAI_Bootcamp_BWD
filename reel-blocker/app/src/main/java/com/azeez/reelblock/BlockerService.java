@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityWindowInfo;
 import android.widget.Toast;
 
 import java.util.ArrayDeque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -21,8 +22,19 @@ import java.util.Set;
  */
 public class BlockerService extends AccessibilityService {
 
-    private static final String INSTAGRAM = "com.instagram.android";
-    private static final String YOUTUBE = "com.google.android.youtube";
+    private static final String INSTAGRAM = "instagram";
+    private static final String YOUTUBE = "youtube";
+
+    /** App package -> which app it is. Includes Lite and modded versions. */
+    private static final Map<String, String> APPS = Map.of(
+            "com.instagram.android", INSTAGRAM,
+            "com.instagram.lite", INSTAGRAM,
+            "com.instander.android", INSTAGRAM,
+            "com.google.android.youtube", YOUTUBE,
+            "app.revanced.android.youtube", YOUTUBE,
+            "app.rvx.android.youtube", YOUTUBE,
+            "com.vanced.android.youtube", YOUTUBE
+    );
 
     /**
      * Start of view ids that only exist on the swipeable short-video player.
@@ -88,19 +100,52 @@ public class BlockerService extends AccessibilityService {
     private long lastCheck;
     private long lastLeave;
     private long lastToast;
+    private long lastHeartbeat;
+    private long lastError;
+    private final Set<String> seenApps = new HashSet<>();
 
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
         limiter = new Limiter(this);
         Lock.autoLockOnFirstRun(this);
+        Status.serviceStarted(this);
+        DebugLog.add(this, "service started (v" + BuildConfig.VERSION_NAME + ")");
+    }
+
+    @Override
+    public boolean onUnbind(android.content.Intent intent) {
+        DebugLog.add(this, "service stopped by the system");
+        return super.onUnbind(intent);
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
+        // Never let one bad screen crash the service: Android would turn it off.
+        try {
+            handleEvent(event);
+        } catch (RuntimeException e) {
+            long now = SystemClock.uptimeMillis();
+            if (now - lastError > 10_000) {
+                lastError = now;
+                DebugLog.add(this, "error: " + e);
+            }
+        }
+    }
+
+    private void handleEvent(AccessibilityEvent event) {
         if (limiter == null || event.getPackageName() == null) return;
         String eventPkg = event.getPackageName().toString();
         if (eventPkg.equals(getPackageName())) return;
+
+        long nowMs = SystemClock.uptimeMillis();
+        if (nowMs - lastHeartbeat > 10_000) {
+            lastHeartbeat = nowMs;
+            Status.heartbeat(this);
+        }
+        if (seenApps.add(eventPkg)) {
+            DebugLog.add(this, "saw app: " + eventPkg);
+        }
 
         long now = SystemClock.uptimeMillis();
         int type = event.getEventType();
@@ -113,8 +158,9 @@ public class BlockerService extends AccessibilityService {
         if (root == null || root.getPackageName() == null) return;
         String pkg = root.getPackageName().toString();
 
-        if (PLAYER_ID_PREFIXES.containsKey(pkg)) {
-            handleApp(root, pkg, event, now);
+        String app = APPS.get(pkg);
+        if (app != null) {
+            handleApp(root, app, pkg, event, now);
         } else {
             inPlayer = false;
             if (BROWSERS.contains(pkg)) {
@@ -147,8 +193,9 @@ public class BlockerService extends AccessibilityService {
         return active;
     }
 
-    private void handleApp(AccessibilityNodeInfo root, String pkg, AccessibilityEvent event, long now) {
-        String reason = playerReason(root, pkg);
+    private void handleApp(AccessibilityNodeInfo root, String app, String pkg, AccessibilityEvent event,
+                           long now) {
+        String reason = playerReason(root, app);
         if (reason == null) {
             if (inPlayer || event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                 logScreen(root, pkg, "not a player");
@@ -206,12 +253,12 @@ public class BlockerService extends AccessibilityService {
     }
 
     /** Why this screen is a Shorts/Reels player, or null if it is not. */
-    private String playerReason(AccessibilityNodeInfo root, String pkg) {
+    private String playerReason(AccessibilityNodeInfo root, String app) {
         Rect screen = new Rect();
         root.getBoundsInScreen(screen);
-        String[] prefixes = PLAYER_ID_PREFIXES.get(pkg);
-        String[] tabs = PLAYER_TABS.get(pkg);
-        String tabId = pkg + ":id/" + PLAYER_TAB_IDS.get(pkg);
+        String[] prefixes = PLAYER_ID_PREFIXES.get(app);
+        String[] tabs = PLAYER_TABS.get(app);
+        String tabId = PLAYER_TAB_IDS.get(app);
 
         ArrayDeque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
         queue.add(root);
@@ -225,7 +272,7 @@ public class BlockerService extends AccessibilityService {
                 for (String prefix : prefixes) {
                     if (shortId.startsWith(prefix)) return "id " + shortId;
                 }
-                if (node.isSelected() && id.equals(tabId)) return "tab id " + shortId;
+                if (node.isSelected() && shortId.equals(tabId)) return "tab id " + shortId;
             }
             if (node.isSelected() && matches(node, tabs)) return "selected tab";
             if (node.isScrollable() && isFullScreenVerticalPager(node, screen)) {

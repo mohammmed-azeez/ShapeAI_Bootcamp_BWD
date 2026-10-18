@@ -76,12 +76,11 @@ public class MainActivity extends Activity {
         });
 
         addButton(layout, "Send debug report (if Reels/Shorts are not blocked)", v -> {
-            String report = DebugLog.read(this);
+            String report = statusReport() + "\n--- log ---\n" + DebugLog.read(this);
             Intent send = new Intent(Intent.ACTION_SEND);
             send.setType("text/plain");
             send.putExtra(Intent.EXTRA_SUBJECT, "ReelBlock debug report");
-            send.putExtra(Intent.EXTRA_TEXT, report.isEmpty()
-                    ? "Empty: ReelBlock has not seen Instagram or YouTube yet. Is step 1 on?" : report);
+            send.putExtra(Intent.EXTRA_TEXT, report);
             startActivity(Intent.createChooser(send, "Send debug report"));
         });
 
@@ -101,7 +100,7 @@ public class MainActivity extends Activity {
         StringBuilder sb = new StringBuilder();
         sb.append("Rule: up to ").append(Limiter.MAX_PER_WINDOW)
                 .append(" Shorts/Reels per minute. One more blocks them for 15 minutes.\n\n");
-        sb.append(isServiceEnabled() ? "✅ Watching Shorts and Reels\n" : "❌ Not running. Do step 1.\n");
+        sb.append(serviceLine()).append('\n');
         sb.append(isAdminActive() ? "✅ Uninstall is blocked\n" : "❌ Uninstall is not blocked. Do step 3.\n");
 
         long blocked = new Limiter(this).blockedRemainingMs();
@@ -132,6 +131,38 @@ public class MainActivity extends Activity {
 
         lockButton.setEnabled(!protecting);
         unlockButton.setEnabled(protecting && Lock.requestedAt(this) == 0);
+    }
+
+    /** Settings can say "On" while realme has stopped the service, so check that it really runs. */
+    private String serviceLine() {
+        if (!isServiceEnabled()) {
+            return "❌ Not running. Do step 1 (Accessibility is off).";
+        }
+        if (Status.startedAt(this) == 0) {
+            return "❌ Accessibility is on, but the service never started.\n"
+                    + "   Fix: turn ReelBlock OFF and ON again in Accessibility. Then restart the phone.";
+        }
+        long idleMin = (System.currentTimeMillis() - Status.lastHeartbeat(this)) / 60000;
+        if (idleMin >= 10) {
+            return "⚠️ Accessibility is on, but nothing seen for " + idleMin + " min.\n"
+                    + "   If you used the phone in that time, realme stopped it: turn ReelBlock OFF\n"
+                    + "   and ON in Accessibility, and do step 2.";
+        }
+        return "✅ Watching Shorts and Reels";
+    }
+
+    private String statusReport() {
+        java.text.DateFormat f = java.text.DateFormat.getDateTimeInstance();
+        long started = Status.startedAt(this);
+        long beat = Status.lastHeartbeat(this);
+        return "ReelBlock " + BuildConfig.VERSION_NAME
+                + "\nPhone: " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
+                + ", Android " + android.os.Build.VERSION.RELEASE + " (API " + android.os.Build.VERSION.SDK_INT + ")"
+                + "\nAccessibility on in Settings: " + isServiceEnabled()
+                + "\nService last started: " + (started == 0 ? "never" : f.format(new java.util.Date(started)))
+                + "\nService last saw an app: " + (beat == 0 ? "never" : f.format(new java.util.Date(beat)))
+                + "\nUninstall blocked: " + isAdminActive()
+                + "\nLocked: " + Lock.isProtecting(this);
     }
 
     private boolean isServiceEnabled() {
