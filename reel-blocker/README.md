@@ -34,6 +34,11 @@ Made for realme UI 7 / Android 16 (works on Android 8 and newer).
 - **"App not installed" / "package conflicts"**: an older ReelBlock with a different key is installed. Uninstall it first (Settings > Apps > ReelBlock > Uninstall; if Device admin is on, turn it off first). From version 3.0 on, every build uses the same key, so updates install over the old app.
 - **Nothing happens when you tap the file**: open it from the **Files** app instead of the browser, and allow "Install unknown apps" for Files.
 
+## If Reels or Shorts are not blocked
+
+1. Open ReelBlock. The first line must say **✅ Watching Shorts and Reels**. If not, turn it on again (step 1) and check step 2. realme may turn it off to save battery.
+2. Watch 1 or 2 Reels, then open ReelBlock and press **Send debug report**. It shows what ReelBlock saw on screen. Share that text so the detection can be fixed for your app version.
+
 ## Unlocking
 
 Open ReelBlock > **Request unlock**. After 24 hours you can turn it off in Settings.

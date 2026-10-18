@@ -1,9 +1,12 @@
 package com.azeez.reelblock;
 
 import android.accessibilityservice.AccessibilityService;
+import android.graphics.Rect;
+import android.os.Build;
 import android.os.SystemClock;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
 import android.widget.Toast;
 
 import java.util.ArrayDeque;
@@ -21,13 +24,17 @@ public class BlockerService extends AccessibilityService {
     private static final String INSTAGRAM = "com.instagram.android";
     private static final String YOUTUBE = "com.google.android.youtube";
 
-    /** View ids of the swipeable short-video player. Best effort: apps rename them. */
-    private static final Map<String, String[]> PLAYER_VIEW_IDS = Map.of(
+    /**
+     * Start of view ids that only exist on the swipeable short-video player.
+     * Best effort: the apps rename them, so the full-screen pager check below is the backup.
+     */
+    private static final Map<String, String[]> PLAYER_ID_PREFIXES = Map.of(
             INSTAGRAM, new String[] {
-                    "clips_viewer_view_pager", "clips_viewer_container", "clips_swipe_refresh_container"},
+                    "clips_viewer", "clips_ufi", "clips_swipe", "clips_author", "clips_caption",
+                    "clips_media", "clips_video"},
             YOUTUBE, new String[] {
-                    "reel_recycler", "reel_player_page_container", "reel_watch_player",
-                    "reel_watch_fragment_root"}
+                    "reel_player", "reel_watch", "reel_recycler", "reel_time_bar", "reel_progress",
+                    "reel_main_title", "reel_channel", "reel_like", "reel_dyn", "reel_pivot"}
     );
 
     /** Bottom tab labels. If this tab is selected, the user is in the short-video feed. */
@@ -35,6 +42,15 @@ public class BlockerService extends AccessibilityService {
             INSTAGRAM, new String[] {"Reels"},
             YOUTUBE, new String[] {"Shorts"}
     );
+
+    /** View ids of the bottom tab that opens the short-video feed. */
+    private static final Map<String, String> PLAYER_TAB_IDS = Map.of(
+            INSTAGRAM, "clips_tab",
+            YOUTUBE, "pivot_shorts"
+    );
+
+    /** Part of the screen a pager and its page must cover to count as a full-screen player. */
+    private static final float FULL_SCREEN = 0.8f;
 
     private static final Set<String> BROWSERS = Set.of(
             "com.android.chrome", "com.chrome.beta", "org.mozilla.firefox", "com.brave.browser",
@@ -60,7 +76,7 @@ public class BlockerService extends AccessibilityService {
             "Set time automatically", "Automatic date", "Date & time", "Date and time"
     };
 
-    private static final int MAX_NODES = 4000;
+    private static final int MAX_NODES = 5000;
     private static final long CHECK_INTERVAL_MS = 250;
     /** One swipe fires several scroll events. Events closer than this count as one short. */
     private static final long SWIPE_GAP_MS = 900;
@@ -83,7 +99,8 @@ public class BlockerService extends AccessibilityService {
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (limiter == null || event.getPackageName() == null) return;
-        if (event.getPackageName().toString().equals(getPackageName())) return;
+        String eventPkg = event.getPackageName().toString();
+        if (eventPkg.equals(getPackageName())) return;
 
         long now = SystemClock.uptimeMillis();
         int type = event.getEventType();
@@ -92,36 +109,66 @@ public class BlockerService extends AccessibilityService {
         }
         lastCheck = now;
 
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo root = findRoot(eventPkg);
         if (root == null || root.getPackageName() == null) return;
         String pkg = root.getPackageName().toString();
 
-        if (PLAYER_VIEW_IDS.containsKey(pkg)) {
+        if (PLAYER_ID_PREFIXES.containsKey(pkg)) {
             handleApp(root, pkg, event, now);
-        } else if (BROWSERS.contains(pkg)) {
-            handleBrowser(root);
-        } else if (SETTINGS_APPS.contains(pkg) && Lock.isProtecting(this)
-                && isProtectedSettingsPage(root)) {
-            leave("ReelBlock is locked. Request an unlock in the app and wait 24 hours.");
+        } else {
+            inPlayer = false;
+            if (BROWSERS.contains(pkg)) {
+                handleBrowser(root);
+            } else if (SETTINGS_APPS.contains(pkg) && Lock.isProtecting(this)
+                    && isProtectedSettingsPage(root)) {
+                leave("ReelBlock is locked. Request an unlock in the app and wait 24 hours.");
+            }
         }
     }
 
+    /** The window of the app that sent the event. Falls back to the active window. */
+    private AccessibilityNodeInfo findRoot(String eventPkg) {
+        AccessibilityNodeInfo active = getRootInActiveWindow();
+        if (active != null && active.getPackageName() != null
+                && eventPkg.equals(active.getPackageName().toString())) {
+            return active;
+        }
+        try {
+            for (AccessibilityWindowInfo w : getWindows()) {
+                if (w.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) continue;
+                AccessibilityNodeInfo r = w.getRoot();
+                if (r != null && r.getPackageName() != null
+                        && eventPkg.equals(r.getPackageName().toString())) {
+                    return r;
+                }
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return active;
+    }
+
     private void handleApp(AccessibilityNodeInfo root, String pkg, AccessibilityEvent event, long now) {
-        if (!isPlayerScreen(root, pkg)) {
+        String reason = playerReason(root, pkg);
+        if (reason == null) {
+            if (inPlayer || event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                logScreen(root, pkg, "not a player");
+            }
             inPlayer = false;
             return;
         }
         if (limiter.isBlocked()) {
+            DebugLog.add(this, pkg + " blocked (" + reason + ")");
             leave(blockedMessage());
             return;
         }
         // Entering the player is one short. After that, each swipe in the player is one more.
         boolean newShort = !inPlayer
-                || (event.getEventType() == AccessibilityEvent.TYPE_VIEW_SCROLLED && isPlayerScroll(event, pkg));
+                || (event.getEventType() == AccessibilityEvent.TYPE_VIEW_SCROLLED && isPlayerScroll(event, root));
         inPlayer = true;
         if (newShort && now - lastCounted >= SWIPE_GAP_MS) {
             lastCounted = now;
-            countShort();
+            int count = countShort();
+            DebugLog.add(this, pkg + " short #" + count + " this minute (" + reason + ")");
         }
     }
 
@@ -138,17 +185,19 @@ public class BlockerService extends AccessibilityService {
         }
         if (!url.equals(lastBrowserUrl)) {
             lastBrowserUrl = url;
-            countShort();
+            int count = countShort();
+            DebugLog.add(this, "browser short #" + count + " this minute");
         }
     }
 
-    private void countShort() {
+    private int countShort() {
         int count = limiter.recordView();
         if (count > Limiter.MAX_PER_WINDOW) {
             leave("Doomscrolling detected. Shorts and Reels are blocked for 15 minutes.");
         } else if (count == Limiter.MAX_PER_WINDOW) {
             toast("That's 3 this minute. One more blocks Shorts and Reels for 15 minutes.");
         }
+        return count;
     }
 
     private String blockedMessage() {
@@ -156,22 +205,122 @@ public class BlockerService extends AccessibilityService {
         return "Shorts and Reels are blocked for " + mins + " more min.";
     }
 
-    private boolean isPlayerScreen(AccessibilityNodeInfo root, String pkg) {
-        for (String id : PLAYER_VIEW_IDS.get(pkg)) {
-            if (anyVisible(root.findAccessibilityNodeInfosByViewId(pkg + ":id/" + id))) return true;
+    /** Why this screen is a Shorts/Reels player, or null if it is not. */
+    private String playerReason(AccessibilityNodeInfo root, String pkg) {
+        Rect screen = new Rect();
+        root.getBoundsInScreen(screen);
+        String[] prefixes = PLAYER_ID_PREFIXES.get(pkg);
+        String[] tabs = PLAYER_TABS.get(pkg);
+        String tabId = pkg + ":id/" + PLAYER_TAB_IDS.get(pkg);
+
+        ArrayDeque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
+        queue.add(root);
+        int seen = 0;
+        while (!queue.isEmpty() && seen++ < MAX_NODES) {
+            AccessibilityNodeInfo node = queue.poll();
+            if (!node.isVisibleToUser()) continue;
+            String id = node.getViewIdResourceName();
+            if (id != null) {
+                String shortId = id.substring(id.indexOf('/') + 1);
+                for (String prefix : prefixes) {
+                    if (shortId.startsWith(prefix)) return "id " + shortId;
+                }
+                if (node.isSelected() && id.equals(tabId)) return "tab id " + shortId;
+            }
+            if (node.isSelected() && matches(node, tabs)) return "selected tab";
+            if (node.isScrollable() && isFullScreenVerticalPager(node, screen)) {
+                return "full-screen pager " + node.getClassName();
+            }
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) queue.add(child);
+            }
         }
-        return hasSelectedTab(root, PLAYER_TABS.get(pkg));
+        return null;
     }
 
-    /** True if a scroll came from the video pager, not from e.g. the comments list. */
-    private static boolean isPlayerScroll(AccessibilityEvent event, String pkg) {
-        AccessibilityNodeInfo source = event.getSource();
-        if (source == null || source.getViewIdResourceName() == null) return true;
-        String id = source.getViewIdResourceName();
-        for (String playerId : PLAYER_VIEW_IDS.get(pkg)) {
-            if (id.equals(pkg + ":id/" + playerId)) return true;
+    /** A list that fills the screen, shows one full-screen page at a time, and swipes up/down. */
+    private static boolean isFullScreenVerticalPager(AccessibilityNodeInfo node, Rect screen) {
+        if (screen.width() <= 0 || screen.height() <= 0) return false;
+        Rect r = new Rect();
+        node.getBoundsInScreen(r);
+        if (r.width() < screen.width() * FULL_SCREEN || r.height() < screen.height() * FULL_SCREEN) {
+            return false;
         }
-        return id.contains("clips") || id.contains("reel");
+        if (isHorizontal(node)) return false;
+        Rect c = new Rect();
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child == null) continue;
+            child.getBoundsInScreen(c);
+            if (c.width() >= screen.width() * FULL_SCREEN && c.height() >= screen.height() * FULL_SCREEN) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True for side-swiping lists such as Instagram Stories, which are not Reels. */
+    private static boolean isHorizontal(AccessibilityNodeInfo node) {
+        for (AccessibilityNodeInfo.AccessibilityAction a : node.getActionList()) {
+            int id = a.getId();
+            if (id == android.R.id.accessibilityActionScrollLeft
+                    || id == android.R.id.accessibilityActionScrollRight
+                    || (Build.VERSION.SDK_INT >= 29 && (id == android.R.id.accessibilityActionPageLeft
+                    || id == android.R.id.accessibilityActionPageRight))) {
+                return true;
+            }
+        }
+        AccessibilityNodeInfo.CollectionInfo info = node.getCollectionInfo();
+        return info != null && info.getColumnCount() > 1 && info.getRowCount() <= 1;
+    }
+
+    /** True if a scroll is an up/down swipe of a big list, not e.g. a side swipe or a small list. */
+    private static boolean isPlayerScroll(AccessibilityEvent event, AccessibilityNodeInfo root) {
+        if (Build.VERSION.SDK_INT >= 28 && event.getScrollDeltaX() != 0 && event.getScrollDeltaY() == 0) {
+            return false;
+        }
+        AccessibilityNodeInfo source = event.getSource();
+        if (source == null) return true;
+        Rect screen = new Rect();
+        Rect r = new Rect();
+        root.getBoundsInScreen(screen);
+        source.getBoundsInScreen(r);
+        return r.height() >= screen.height() / 2;
+    }
+
+    /** Logs what a screen in Instagram/YouTube looked like, to fix missed players later. */
+    private void logScreen(AccessibilityNodeInfo root, String pkg, String result) {
+        StringBuilder ids = new StringBuilder();
+        StringBuilder pagers = new StringBuilder();
+        Rect screen = new Rect();
+        Rect r = new Rect();
+        root.getBoundsInScreen(screen);
+        ArrayDeque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
+        queue.add(root);
+        int seen = 0;
+        int idCount = 0;
+        while (!queue.isEmpty() && seen++ < MAX_NODES) {
+            AccessibilityNodeInfo node = queue.poll();
+            if (!node.isVisibleToUser()) continue;
+            String id = node.getViewIdResourceName();
+            if (id != null && idCount++ < 40) ids.append(id.substring(id.indexOf('/') + 1)).append(' ');
+            if (node.isScrollable()) {
+                node.getBoundsInScreen(r);
+                pagers.append(node.getClassName()).append(' ').append(r.width()).append('x')
+                        .append(r.height()).append(" children=").append(node.getChildCount()).append("; ");
+            }
+            if (node.isSelected()) {
+                CharSequence d = node.getContentDescription() != null ? node.getContentDescription() : node.getText();
+                if (d != null) ids.append("[selected:").append(d).append("] ");
+            }
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) queue.add(child);
+            }
+        }
+        DebugLog.add(this, pkg + " " + result + " screen=" + screen.width() + "x" + screen.height()
+                + " ids: " + ids + " scrollable: " + pagers);
     }
 
     private static String findBrowserUrl(AccessibilityNodeInfo root) {
@@ -194,24 +343,6 @@ public class BlockerService extends AccessibilityService {
         if (Lock.isCoolingDown(this) || limiter.isBlocked()) {
             for (String text : CLOCK_PAGE_TEXTS) {
                 if (anyVisible(root.findAccessibilityNodeInfosByText(text))) return true;
-            }
-        }
-        return false;
-    }
-
-    /** Breadth-first search for a selected node whose label matches one of the tab names. */
-    private static boolean hasSelectedTab(AccessibilityNodeInfo root, String[] labels) {
-        ArrayDeque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
-        queue.add(root);
-        int seen = 0;
-        while (!queue.isEmpty() && seen++ < MAX_NODES) {
-            AccessibilityNodeInfo node = queue.poll();
-            if (node.isSelected() && node.isVisibleToUser() && matches(node, labels)) {
-                return true;
-            }
-            for (int i = 0; i < node.getChildCount(); i++) {
-                AccessibilityNodeInfo child = node.getChild(i);
-                if (child != null) queue.add(child);
             }
         }
         return false;

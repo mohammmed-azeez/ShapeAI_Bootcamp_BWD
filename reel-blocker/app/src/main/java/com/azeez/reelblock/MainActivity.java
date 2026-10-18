@@ -75,6 +75,16 @@ public class MainActivity extends Activity {
             refresh();
         });
 
+        addButton(layout, "Send debug report (if Reels/Shorts are not blocked)", v -> {
+            String report = DebugLog.read(this);
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("text/plain");
+            send.putExtra(Intent.EXTRA_SUBJECT, "ReelBlock debug report");
+            send.putExtra(Intent.EXTRA_TEXT, report.isEmpty()
+                    ? "Empty: ReelBlock has not seen Instagram or YouTube yet. Is step 1 on?" : report);
+            startActivity(Intent.createChooser(send, "Send debug report"));
+        });
+
         ScrollView scroll = new ScrollView(this);
         scroll.setFitsSystemWindows(true);
         scroll.addView(layout);
