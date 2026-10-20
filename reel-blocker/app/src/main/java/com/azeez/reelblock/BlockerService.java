@@ -110,6 +110,7 @@ public class BlockerService extends AccessibilityService {
         limiter = new Limiter(this);
         Lock.autoLockOnFirstRun(this);
         Status.serviceStarted(this);
+        SelfHeal.schedule(this);
         DebugLog.add(this, "service started (v" + BuildConfig.VERSION_NAME + ")");
     }
 

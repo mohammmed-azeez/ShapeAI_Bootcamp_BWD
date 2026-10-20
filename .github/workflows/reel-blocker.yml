@@ -45,4 +45,6 @@ jobs:
           tag_name: reelblock-latest
           name: ReelBlock (latest build)
           target_commitish: ${{ github.sha }}
-          files: reel-blocker/ReelBlock.apk
+          files: |
+            reel-blocker/ReelBlock.apk
+            reel-blocker/windows-setup/ReelBlock-Setup.bat

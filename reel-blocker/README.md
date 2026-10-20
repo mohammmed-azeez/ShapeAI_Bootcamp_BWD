@@ -12,7 +12,20 @@ An Android app that stops doomscrolling on **YouTube Shorts** and **Instagram Re
 - Normal YouTube videos and the Instagram feed, Stories and DMs are not touched.
 - The numbers are fixed in the code, so you cannot loosen them in a weak moment.
 
-## Install on realme P3 Ultra (one time)
+## Easiest: one-time setup from a Windows laptop (recommended)
+
+No taps inside the app at all. After this, ReelBlock runs by itself forever and turns itself back on if realme switches it off.
+
+1. On the phone:
+   - Settings > About device > Version > tap **Build number** 7 times (turns on Developer options).
+   - Settings > Additional settings > Developer options > turn ON **USB debugging** and **Disable permission monitoring**.
+2. On the laptop, download **ReelBlock-Setup.bat** from this repo's Releases page (ReelBlock (latest build)).
+3. Connect the phone with a USB cable. Double-click **ReelBlock-Setup.bat**.
+   - If Windows says "Windows protected your PC", click **More info > Run anyway**.
+   - If the phone asks "Allow USB debugging?", tick **Always allow** and tap **Allow**.
+4. Wait for **DONE**. Unplug. That's it.
+
+## Install on realme P3 Ultra by hand (one time)
 
 1. On your phone, download `ReelBlock.apk` from this repo's **Releases** page (**ReelBlock (latest build)**).
 2. Open the file. Allow "Install unknown apps" when asked.

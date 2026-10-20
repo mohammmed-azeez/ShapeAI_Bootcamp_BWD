@@ -93,6 +93,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        SelfHeal.ensureRunning(this);
+        SelfHeal.schedule(this);
         refresh();
     }
 
@@ -162,7 +164,8 @@ public class MainActivity extends Activity {
                 + "\nService last started: " + (started == 0 ? "never" : f.format(new java.util.Date(started)))
                 + "\nService last saw an app: " + (beat == 0 ? "never" : f.format(new java.util.Date(beat)))
                 + "\nUninstall blocked: " + isAdminActive()
-                + "\nLocked: " + Lock.isProtecting(this);
+                + "\nLocked: " + Lock.isProtecting(this)
+                + "\nSelf-heal (USB setup done): " + SelfHeal.canHeal(this);
     }
 
     private boolean isServiceEnabled() {
